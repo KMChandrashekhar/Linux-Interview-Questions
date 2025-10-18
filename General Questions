@@ -250,4 +250,6 @@ Can you describe CI-CD wrt to AWS services
 How can you secure multi tier app deployment through terraform?
 How will you utilize the policies in terraform?
 What type of logs get stored in Cloud watch logs?
+Tell me 5 best practices to implement Cloud Optimization?
+How do you handle terraform config files conflicts inside GIT?
  
