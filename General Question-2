@@ -1,5 +1,12 @@
+Happiest Minds–L1
 
-
+Introduce yourself & daily activities
+Give me an example for using shell scripting.
+What is the use of going for shell script for resource monitoring when you can run those in single commands
+Give me some scenarios where you used cloudwatch to monitor application?
+For what resources can you generate cloudwatch logs?
+How will you be able to identify log groups belonging to a particular resource?
+How can we change the instance type?
 Consider we have an RDS instance in the prod environment and a Redshift cluster in a non prod environment. How can we move the data from RDS to Redshift
 What is your working experience in the EKS cluster?
 Common issues you faced when working with EKS cluster?
