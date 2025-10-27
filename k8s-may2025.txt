@@ -1,0 +1,905 @@
+--------------------------------------------------------------------------------------------------------------
+Kubernetes
+--------------------------------------------------------------------------------------------------------------
+09-10-25 - class 1
+--------------------------------------------------------------------------------------------------------------
+# Setup Master Node [t2.medium]
+
+# Update Packages
+
+sudo apt update
+sudo apt upgrade -y
+
+sudo swapoff -a
+sudo sed -i '/ swap / s/^/#/' /etc/fstab
+
+
+# Load Kernel Modules
+
+sudo tee /etc/modules-load.d/containerd.conf <<EOF
+overlay
+br_netfilter
+EOF
+
+sudo modprobe overlay
+sudo modprobe br_netfilter
+
+# Set Up Required sysctl Parameters
+
+sudo tee /etc/sysctl.d/kubernetes.conf <<EOF
+net.bridge.bridge-nf-call-ip6tables = 1
+net.bridge.bridge-nf-call-iptables = 1
+net.ipv4.ip_forward = 1
+EOF
+
+sudo sysctl --system
+
+# Install Containerd [Docker]
+
+sudo apt install -y curl gnupg2 software-properties-common apt-transport-https ca-certificates
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmour -o /etc/apt/trusted.gpg.d/docker.gpg
+sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+sudo apt update
+sudo apt install -y containerd.io
+
+#Configure Containerd
+
+containerd config default | sudo tee /etc/containerd/config.toml >/dev/null 2>&1
+sudo sed -i 's/SystemdCgroup \= false/SystemdCgroup \= true/g' /etc/containerd/config.toml
+
+sudo systemctl restart containerd
+sudo systemctl enable containerd
+
+# Install Kubernetes Components
+
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.34/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.34/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+sudo apt update
+sudo apt install -y kubeadm kubelet kubectl
+
+---------------------------------------------------------------------------------------------------------------
+Create an AMI from an instance
+
+Right-click on the instance you want to use as the basis for your AMI or Click-on Actions button.
+Action --> Image --> Create Image
+
+Once the Ami is available (usually it takes 2-8 minutes to get ready), create 2 instances with t2.micro to create worker nodes.
+---------------------------------------------------------------------------------------------------------------
+# Initializing Master Server [root user]
+
+sudo su
+kubeadm init
+
+# Note: Copy the kubeadm join command along with token generated and keep it in a separate file, we need to run this command on worker nodes
+
+# Configuring Kube [ubuntu user]
+
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+# Deploy Pod Network
+
+kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+
+# Initialize WORKER NODES [ssh to worker nodes]
+
+sudo su
+kubeadm join <TOKEN>  --> To connect worker node to Master
+--------------------------------------------------------------------------------------------------------------
+Installation
+
+K8S Master - t2.medium
+K8S Workers - t2.micro
+
+kubeadm token create --print-join-command --> To create a new join command
+
+kubectl get nodes --> To list all the nodes of the cluster
+--------------------------------------------------------------------------------------------------------------
+Pod Definition/Manifest File:
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx
+  labels:
+    app: nginx
+spec:
+  containers:
+  -  name: nginx-container
+     image: nginx
+     ports:
+     - containerPort: 80
+--------------------------------------------------------------------------------------------------------------
+Commands:
+
+kubectl run <pod-name> --image <image> --> To create a pod with CLI
+
+kubectl apply -f <manifest-path>.yaml --> To apply a kubernetes manifest
+
+kubectl get pods --> To list the pods
+kubectl get pods -o wide --> To list the pods with more information
+
+kubectl delete <object-kind> <object-name> --> To delete a kubernetes resource
+
+kubectl describe <object-kind> <object-name> --> To see more information about a kubernetes resource
+--------------------------------------------------------------------------------------------------------------
+Manifest File Fields:
+
+1. apiVersion:
+
+Ex: v1, apps/v1, storage.k8s.io/v1
+
+kubectl api-versions --> To list all the api-versions in Kubernetes
+
+2. kind:
+
+Ex: Pod, Deployment, Service, ClusterRole etc
+
+kubectl api-resources --> To list all the resources/objects that can be created in Kubernetes
+
+3. metadata:
+
+4. labels:Labels are key value pairs used for grouping and selecting Kubernetes objects.
+
+Ex:
+
+labels:
+  app: nginx
+  type: lb
+
+5. selectors:Selectors are used to identify the Kubernetes objects using their labels.
+
+Types of Selectors:
+
+a. Equity Based Selectors: Equity Based Selectors: these are used to identify k8s objects by key and an exact value. operators are used here equal to, not equal to: =, !=, ==
+
+Commands:
+
+kubectl get pods -l app=nginx
+kubectl get pods -l app!=nginx
+
+b. Set Based Selectors: these are used to identify the Kubernetes objects by keys based on the set of values, Operators Used: In, NotIn, Exists
+
+Example:
+
+app in (nginx)
+app in (nginx,proxy)
+app notin (nginx)
+app exists
+
+6. Spec: This section is used to define the configuration of the kubernetes object
+
+--------------------------------------------------------------------------------------------------------------
+Controller Types:
+
+1. ReplicaSet/ReplicationController: Replica set or replication controller are used to ensure the specified number of identical PODs are always running in cluster to achieve load balancing and high availability. if any pod goes down or is deleted manually this controller immediately creates a new pod to replica set.
+
+Difference Between ReplicaSet and ReplicationController:Difference between replica set and replicationcontroller : Both replica set and replication controller are used to create multiple identical replicas of PODs however replica set is the new and most advanced version while the replication controller is older and now is deprecated.
+
+Replication controller also only supports equity based while the replica sets supports both equity based and set based. 
+
+Manifest:
+
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: nginx-repset
+  labels:
+    app: nginx
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      name: nginx
+      labels: 
+        app: nginx
+    spec:
+      containers:
+      - name: nginx-container
+        image: nginx
+        ports:
+        - containerPort: 80
+
+Commands:
+
+kubectl scale replicaset <replicaset-name> --replicas <number-of-pods> --> To scale the pods of replica set
+
+kubectl edit <object-kind> <object-name> --> To edit an existing kubernetes object
+--------------------------------------------------------------------------------------------------------------
+2. Deployment Controller: This controller is the most common object in kubernetes used for deploying and managing application workloads.deployment controller works as a higher layer that manages PODs through replica Sets. the main purpose of a deployment controller is to manage the creation scaling and rolling updates of the PODs without breaking the user experience.
+
+Manifest:
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deploy
+  labels:
+    app: nginx
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      name: nginx
+      labels: 
+        app: nginx
+    spec:
+      containers:
+      - name: nginx-container
+        image: nginx
+        ports:
+        - containerPort: 80
+
+Commands:
+
+kubectl set image deploy <deployment-name> <container-name>=<image> --> To update the image of deployment controller
+
+kubectl rollout history deploy <deployment-name> --> To check the history of the deployment controller
+
+kubectl rollout undo deploy <deployment-name> --> To rollback to one previous version
+kubectl rollout undo deploy <deployment-name> --to-revision=<revision-number> --> To rollback to a particular revision
+--------------------------------------------------------------------------------------------------------------
+3. DaemonSet: This controller in kubernetes ensures that a specific PODs runs on every node in cluster, if a new node is added to the 
+cluster the daemon set automatiocally adds a POD to the new node similarly when nodes are removed from the cluster the PODs are also cleaned up automatically. 
+
+Manifest:
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: nginx-ds
+  labels:
+    app: nginx
+spec:
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      name: nginx
+      labels: 
+        app: nginx
+    spec:
+      containers:
+      - name: nginx-container
+        image: nginx
+        ports:
+        - containerPort: 80
+
+Typical Use Cases of DaemonSet:
+
+1. Monitoring Exporters: Prometheus, Node Exporter
+2. Log Collection Agents: Logstash, Fluentd
+3. Security Threat Monitoring: Falco
+--------------------------------------------------------------------------------------------------------------
+Services:
+
+Need for Kubernetes Service:
+
+1. Static IP Adress and DNS Name: In kubernetes the pods get dynamic ips that change when the pod is recreated. kubernetes service provides a stable 
+IP and dns name to access the pods even if they are recreated
+
+2. Load Balancing:k8s services automatically distribute traffic across all healthy pods 
+
+3. Exposing Pods Externally:k8s services help us to connect to the application from outside the cluster
+
+--------------------------------------------------------------------------------------------------------------
+Example:
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helloworld
+  labels:
+    app: hello
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: hello
+  template:
+    metadata:
+      name: hello
+      labels: 
+        app: hello
+    spec:
+      containers:
+      - name: hello-container
+        image: artisantek/k8s-helloworld
+        ports:
+        - containerPort: 80
+--------------------------------------------------------------------------------------------------------------
+Types of Services:
+
+1. ClusterIP:cluster IP is the default service type in k8s and it is used to expose the applications internally within the cluster 
+
+Manifest:
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-svc
+spec:
+  type: ClusterIP
+  ports:
+  - targetPort: 8080
+    port: 8080
+  selector:
+    app: hello
+--------------------------------------------------------------------------------------------------------------
+2. NodePort:the nodeport service exposes the application on a specific port on each and every node of the cluster. enabling the access from outside the cluster 
+
+Range: 30000-32767
+
+Manifest:
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-svc
+spec:
+  type: NodePort
+  ports:
+  - targetPort: 8080
+    port: 8080
+    nodePort: 31000
+  selector:
+    app: hello
+--------------------------------------------------------------------------------------------------------------
+3. LoadBalancer:the load balancer svc exposes the application to the external world by provisioning an external load balancer through a cloud provider internally cubernaties creates a node pod and then attaches a
+--------------------------------------------------------------------------------------------------------------
+Pod Phases/Pod Lifecycle:
+
+1. Pending: 
+2. Running:
+3. Succeeded/Completed: 
+4. Failed/Error: 
+5. Unknown:
+
+POD Phases/POD Lifecycle: 
+
+1st Phase - pending: the POD has been accepted by Kubernetes cluster but one or more containers
+present in the POD have not been scheduled on to a node.
+
+2nd phase - Running: the POD has been scheduled to a node and all the containers have been created
+successfully and are up and running.
+
+3rd Phase - Succeeded/Completed: all the containers in the pod have terminated successfully and they wont restart
+
+4th phase - Failed/Error: all the containers in the POD have terminated but at least one container fails. i.e., exited with non zero status.
+
+5th phase - Unknown: the state of the pod could not be up usually due to communication issues between the node and control plane
+
+--------------------------------------------------------------------------------------------------------------
+Environment Variables:
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voting-frontend
+  labels:
+    app: voting-frontend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: voting-frontend
+  template:
+    metadata:
+      labels:
+        app: voting-frontend
+    spec:
+      containers:
+      - name: voting-frontend
+        image: artisantek/voting-frontend:v1
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+        env:
+        - name: BACKEND_URL
+          value: "http://voting-backend:5000"
+--------------------------------------------------------------------------------------------------------------
+Direct/Simple Mount:
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx
+  labels:
+    app: nginx
+spec:
+  volumes:
+  - name: direct
+    hostPath:
+      path: /tmp/nginx
+  containers:
+  - name: nginx-container
+    image: nginx
+    ports:
+    - containerPort: 80
+    volumeMounts:
+    - name: direct
+      mountPath: /home
+--------------------------------------------------------------------------------------------------------------
+Kubernetes Volumes:
+
+Types:
+
+1. Ephemeral Volumes:
+Ephemeral Volumes are short lived, they are tightly dependant with the lifetime of the pods
+and they are deleted if the pod goes down
+2. Persistent Volumes:
+Persistent Volumes are meant for long term storage and are independent of the Pods or
+Nodes life cycle. Once created, persistent volumes can be bonded to a pod using a Persistent
+Volume Claims (PVC)
+--------------------------------------------------------------------------------------------------------------
+Types of Persistent Volumes:
+
+1. Static Provisioning:
+
+In Static provisioning an administrator manually creates pools of persistent volumes.
+
+PV --> PVC --> Mount
+
+2. Dynamic Provisioning:
+
+In Dynamic Volumes we configure storage classes to dynamically create persistent volumes.
+The main goal of storage classes is to eliminate the need for administrators to pre-provision
+storage and volumes are created dynamically on-demand.
+
+Storage Class --> PVC --> Mount
+--------------------------------------------------------------------------------------------------------------
+Static:
+
+PV:
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: static-pv
+spec:
+  capacity:
+    storage: 2Gi
+  hostPath:
+    path: /home/ubuntu/containers
+  storageClassName: static
+  accessModes:
+  - ReadWriteOnce
+--------------------------------------------------------------------------------------------------------------
+PVC:
+
+With Persistent Volume Claim we can use the Persistent Volumes Pools created by an administrator. 
+Persistent Volume Claims are a way for an developer to request storage for the application.
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: static-pvc
+spec:
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: static
+  accessModes:
+  - ReadWriteOnce
+--------------------------------------------------------------------------------------------------------------
+Mounting PVC to Pod:
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx
+  labels:
+    app: nginx
+spec:
+  volumes:
+  - name: pv-volume
+    persistenVolumeClaim:
+      claimName: static-pvc
+  containers:
+  - name: nginx
+    image: nginx
+    ports:
+    - containerPort: 80
+    volumeMounts:
+    - name: pv-volume
+      mountPath: /home
+---------------------------------------------------------------------------------------------------------------
+Storage Class:
+
+A StorageClass in Kubernetes defines how storage volumes should be dynamically provisioned. It provides a template for creating PersistentVolumes (PVs) automatically when a PersistentVolumeClaim (PVC) requests storage.
+---------------------------------------------------------------------------------------------------------------
+The access modes:
+
+ReadWriteOnce -- the volume can be mounted as read-write by a single node
+ReadOnlyMany -- the volume can be mounted as read-only by many nodes
+ReadWriteMany -- the volume can be mounted as read-write by many nodes
+---------------------------------------------------------------------------------------------------------------
+Reclaim Policies:
+
+Retain: When the PersistentVolumeClaim is deleted, the PersistentVolume will still exists,
+and the volume is considered "released". But it is not yet available for another claim because the
+previous claimant's data remains on the volume. An administrator must manually reclaim the volume.
+
+Delete: Delete reclaim policy removes both the PersistentVolume object from Kubernetes,
+as well as the associated storage
+
+Recycle: recycle reclaim policy performs a basic scrub (rm -rf /thevolume/*) on the volume
+and makes it available again for a new claim.
+--------------------------------------------------------------------------------------------------------------
+Assignment: Read About EmptyDir
+--------------------------------------------------------------------------------------------------------------
+4. StatefulSet:
+
+A StatefulSet is a Kubernetes controller used to manage stateful applications, where each pod needs a stable identity and storage.
+
+Key Features:
+
+Stable Pod Names: Pods get predictable names like app-0, app-1, etc., and these names do not change when pods are deleted or restarted.
+Persistent Storage: Each pod gets a dedicated volume, and it is retained even if the pod is deleted.
+Ordered Deployment & Scaling: Pods are created or terminated one at a time in order (from 0 to N). Ensures proper startup and shutdown sequence.
+Stable Network Identity: Each pod gets a DNS name that is tied to its identity (e.g., app-0.service-name.default.svc.cluster.local).
+
+Use Cases:
+
+Databases: MySQL, PostgreSQL, MongoDB — where each instance needs its own volume and stable identity.
+Distributed Systems: Kafka, Cassandra, Elasticsearch — where each pod must keep its data and know its identity.
+--------------------------------------------------------------------------------------------------------------
+Headless Service:
+
+A service with no ClusterIP that does not allocate a stable IP and allows direct DNS-based access to individual pods, often used with StatefulSets.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-hl
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+  - targetPort: 80
+    port: 80
+  selector:
+    app: nginx
+--------------------------------------------------------------------------------------------------------------
+Manual Scheduling of Pods
+
+Instead of letting the scheduler decide automatically, manually controlling which node a pod runs on. This is useful for workload separation, node-specific tasks, or debugging.
+--------------------------------------------------------------------------------------------------------------
+Types:
+
+To Taint a Node(Master): kubectl taint node cplane-01 node=master:NoSchedule
+
+1. nodeSelector:
+
+It is the simplest way of scheduling the pods on to a particular node by using the node labels
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx
+  labels:
+    app: nginx
+spec:
+  nodeSelector:
+    gpu: "yes"
+  containers:
+  - name: nginx-container
+    image: nginx
+    ports:
+    - containerPort: 80
+
+Commands:
+
+kubectl get nodes --show-labels --> To list all the nodes along with their labels
+cplane-01   Ready    control-plane   37m   v1.34.1
+node-01     Ready    <none>         36m   v1.34.1
+
+kubectl label node <node-name> <key>=<value> --> To add a label to a node
+kubectl label node node-01 node-role.kubernetes.io/worker1=
+
+kubectl get nodes --show-labels --> To list all the nodes along with their labels
+cplane-01   Ready    control-plane   37m   v1.34.1
+node-01     Ready    worker1         36m   v1.34.1
+
+kubectl label node <node-name> <key>- --> To remove a label from the node
+kubectl label node node-01 node-role.kubernetes.io/worker1-
+
+kubectl get nodes --show-labels --> To list all the nodes along with their labels
+cplane-01   Ready    control-plane   37m   v1.34.1
+node-01     Ready    <none>         36m   v1.34.1
+--------------------------------------------------------------------------------------------------------------
+Affinity:
+
+1. nodeAffinity:
+
+A more advanced and flexible version of nodeSelector that supports expressions, multiple conditions, and preferences[soft rule].
+
+Rules:
+
+1. HardRule [requiredDuringScheduling]:
+The pod must be scheduled on a node that matches the rule. If no matching node is found, the pod will stay in Pending state.
+
+2. SoftRule [preferredDuringScheduling]:
+The pod will try to schedule on matching nodes, but if not available, it can run on other nodes too. It's a preference, not a strict requirement.
+
+Note: IgnoredDuringExecution: If labels on a node change at runtime such that the pods cease to satisfy affinity rules, the pod continues to run on the node.
+--------------------------------------------------------------------------------------------------------------
+Hard Rule:
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx
+  labels:
+    app: nginx
+spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: spec
+            operator: In
+            values:
+            - high
+            - med
+  containers:
+  - name: nginx-container
+    image: nginx
+    ports:
+    - containerPort: 80
+--------------------------------------------------------------------------------------------------------------
+Soft Rule:
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx
+  labels:
+    app: nginx
+spec:
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 3
+          preference:
+            matchExpressions:
+            - key: spec
+              operator: In
+              values:
+              - high
+        - weight: 2
+          preference:
+            matchExpressions:
+            - key: spec
+              operator: In
+              values:
+              - med
+        - weight: 1
+          preference:
+            matchExpressions:
+            - key: spec
+              operator: In
+              values:
+              - low
+  containers:
+  - name: nginx-container
+    image: nginx
+    ports:
+    - containerPort: 80
+--------------------------------------------------------------------------------------------------------------
+
+Pod Affninity and Pod Anti - Affinity
+
+1. Pod Affinity:
+
+Pod Affinity is a rule that schedules a pod on the same node (or topology) as another pod that meets certain label criteria. It helps co-locate pods that need to work closely together (e.g., low latency communication).
+
+Use Case:
+
+Co-locating Microservices:
+Example: Place frontend and backend pods on the same node to reduce network latency.
+
+Shared Resources:
+Pods that share a common cache or volume may benefit from being scheduled together.
+
+Example yaml:
+
+podAffinity:
+  requiredDuringSchedulingIgnoredDuringExecution:
+  - labelSelector:
+      matchExpressions:
+      - key: app
+        operator: In
+        values:
+        - web
+    topologyKey: kubernetes.io/hostname
+
+2. Pod Anti-Affinity:
+
+Pod Anti-Affinity is a rule that tells Kubernetes to avoid placing a pod on the same node (or topology) as another pod with matching labels. It is used to spread pods across nodes to improve availability and fault tolerance.
+
+Example yaml:
+
+podAntiAffinity:
+  requiredDuringSchedulingIgnoredDuringExecution:
+  - labelSelector:
+      matchExpressions:
+      - key: app
+        operator: In
+        values:
+        - web
+    topologyKey: kubernetes.io/hostname
+--------------------------------------------------------------------------------------------------------------
+Challenge:
+
+1. DB Pod [1] should always goto a node where the label spec=high is present
+2. Cache Pods[2]:
+  a. Should not goto a node where db pod is already running
+  b. No 2 cache replicas should be deployed on the same node [HA]
+3. Frontend Pods[2]:
+  a. Should colocate on the same nodes where cache pods are running
+  b. No 2 frontend replicas should be deployed on the same node [HA]
+
+1. DB Pod [1] should always goto a node where the label spec=high is present
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: db
+  labels:
+    app: db
+spec:
+  nodeSelector:
+    spec: high
+  containers:
+  -  name: db-container
+     image: nginx
+     ports:
+     - containerPort: 80
+
+2. Cache Pods[2]:
+  a. Should not goto a node where db pod is already running
+  b. No 2 cache replicas should be deployed on the same node [HA]
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cache-deploy
+  labels:
+    app: cache
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cache
+  template:
+    metadata:
+      name: cache
+      labels: 
+        app: cache
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - db
+                - cache
+            topologyKey: kubernetes.io/hostname      
+      containers:
+      - name: cache-container
+        image: nginx
+        ports:
+        - containerPort: 80
+
+3. Frontend Pods[2]:
+  a. Should colocate the frontend pods on the same nodes where cache pods are running
+  b. No 2 frontend replicas should be deployed on the same node [HA]
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-deploy
+  labels:
+    app: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      name: frontend
+      labels: 
+        app: frontend
+    spec:
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - cache
+            topologyKey: kubernetes.io/hostname  
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - frontend
+            topologyKey: kubernetes.io/hostname      
+      containers:
+      - name: frontend-container
+        image: nginx
+        ports:
+        - containerPort: 80
+--------------------------------------------------------------------------------------------------------------
+TopologyKey:
+
+topologyKey is a field used in Pod Affinity and Pod Anti-Affinity rules. It defines the scope or level at which the rule is applied. It tells Kubernetes where to look for matching pods — on the same node, zone, region, etc.
+
+Common Values for topologyKey:
+
+kubernetes.io/hostname
+Rule applies at the node level.
+Example: Place or avoid placing pods on the same node.
+
+topology.kubernetes.io/zone
+Rule applies at the zone level.
+Example: Ensure pods are spread across different zones (for high availability).
+
+topology.kubernetes.io/region
+Rule applies at the region level.
+Example: Spread pods across regions in multi-region clusters.
+--------------------------------------------------------------------------------------------------------------
+Taints and Tolerations
+
+Taints are applied to nodes to repel pods from scheduling. Tolerations are applied to pods to let them “tolerate” a node’s taint and be allowed to schedule.
+
+Types:
+
+NoSchedule: Pods will not be scheduled on the node unless they tolerate the taint.
+PreferNoSchedule: Kubernetes will try to avoid placing pods on the node, but it may still happen.
+NoExecute: Existing pods that don’t tolerate this taint will be evicted, and new ones won't be scheduled.
+
+Pod with Tolerations:
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx
+  labels:
+    app: nginx
+spec:
+  tolerations:
+  - key: node
+    operator: Equal
+    value: w3
+    effect: NoSchedule
+  containers:
+  - name: nginx-container
+    image: nginx
+    ports:
+    - containerPort: 80
+
+Commands:
+
+kubectl taint node <node-name> <key>=<value>:<taint-effect> --> To taint a node
+kubectl taint node <node-name> <key>=<value>:<taint-effect>- --> To untaint a node
+--------------------------------------------------------------------------------------------------------------
