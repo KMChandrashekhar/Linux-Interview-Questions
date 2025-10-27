@@ -1,0 +1,26 @@
+Kubernetes & AWS DevOps Interview Q&A
+ 
+ Recently I attended an interview for a 3-year experienced DevOps role. I hope this detailed write-up helps other professionals preparing for similar interviews and provides value to those exploring Kubernetes and AWS cloud concepts. Below are common questions and concise answers on Kubernetes (including EKS) and related AWS topics.
+You can check out the complete detailed version of these questions and answers on my Hashnode blog 👇
+https://lnkd.in/gThDnWCb
+
+1. What is EKS and How Does it Work?
+ 2. What are Deployments and ReplicaSets?
+ 3. What is the Role of the Scheduler in Kubernetes?
+ 4. What is Kube-Proxy?
+ 5. What is the Default Deployment Method in Kubernetes?
+ 6. What Happens if a Pod Fails—How Does Kubernetes Respond?
+ 7. How Does Kubernetes Handle Secrets?
+ 8. How Would You Give an S3-Accessing Pod Secure Access?
+ 9. How Does Scaling Work in Kubernetes?
+ 10. How Does Kubernetes Pull Images for New Applications?
+ 11. How Does Kubernetes Pull Docker Images?
+ 12. How Do You List All Deployments with Specific Labels/Selectors?
+ 13. How Would You See Logs Inside a Pod?
+ 14. How Would You Determine Which Cluster You’re Connected To?
+ 15. If Pods are Running but the Application isn’t Working, How Would You Troubleshoot?
+ 16. How Would You Confirm That a Request is Reaching a Pod?
+ 17. Difference Between Classic Load Balancer and Application Load Balancer on AWS?
+ 18. Auto Scaling: What Are the Configuration Options and Parameters?
+ 19. What is User Data in EC2?
+ 20. How do you upload/download to S3 bucket privately from EC2?
